@@ -1,0 +1,611 @@
+---
+title: "SE_Jobs"
+author: "Alan Ponce"
+date: "14/08/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## SE Jobs
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#To clean up the memory of current R session
+#rm(list = ls(all=TRUE))
+
+
+#Libraries
+library(tidyverse)
+library(devtools)
+#library(googlesheets)
+library(googlesheets4)
+
+#install_github("dgrtwo/drlib")
+#library(drlib)
+
+
+#Text Mining
+library(tidytext)
+library(tidyr)
+library(stringr)
+library(stringi)
+library(rebus)
+library(wordcloud)
+library(SnowballC)
+library(textclean)
+library(rcorpora) # Spanish stopwords stopwords <- corpora("words/stopwords/es")$stopWords
+
+
+#NLP
+library(rJava)
+library(NLP)
+library(openNLP)
+library(RWeka)
+library(qdap)
+library(magrittr)
+
+# if (!require("pacman")) install.packages("pacman")
+# pacman::p_load_gh("trinker/entity")
+
+#library(entity)
+
+# URL
+read_sheet("https://docs.google.com/spreadsheets/d/1U6Cf_qEOhiR9AZqTqS3mbMF3zt2db48ZP5v3rkrAEJY/edit#gid=780868077")
+
+```
+
+## Jobs in Mexico 2021
+
+```{r}
+#To clean up the memory of current R session
+#rm(list = ls(all=TRUE))
+
+# ---- Reading the data
+se_jobs_mx <- read_sheet("https://docs.google.com/spreadsheets/d/13LvHCStdm5LnjwR6SzSAWhYMdNsU6S8ZSa4Joub6m6I/edit#gid=0", sheet = "Mexico") 
+
+se_jobs_mx %>% glimpse() %>% View()
+
+se_jobs_mx <- se_jobs_mx %>% 
+  drop_na(Place)
+
+se_jobs_mx %>% glimpse() %>% View()
+
+```
+
+
+## Detecting patterns
+
+```{r}
+
+################################# Pattern ################################# 
+
+# languages_mx <- c("BPMN", "BPM", "UML", "requirements elicitation", "BABOK", 
+#                   "Agile", "Scrum", "Kanban",
+#                   "Business Analys|Business analys")
+
+languages_mx <- "BPMN|BPM|UML|BABOK|Agile|Scrum|Kanban|Business Analys|Business analys|ITIL|TOGAF"
+
+#languages_mx <- "Java|Python|C#|C[+][+]|\\bR\\b"
+languages_mx
+
+
+############################## Cleaning the text ############################## 
+#tss_ts <- cat(tss_jobs_mx$`Technical skills`)
+se_ts_mx <-replace_white(se_jobs_mx$`Technical skills`)
+
+
+############################## Technical Skills ############################## 
+#languages_data <- str_extract_all(se_jobs_mx$`Technical skills`, languages_mx)
+
+languages_mx_data <- str_extract_all(se_ts_mx, languages_mx)
+#languages_mx_data
+
+languages_mx_data <- unlist(languages_mx_data)
+#languages_mx_data
+
+languages_data_df <- table(languages_mx_data)
+#languages_data_df
+languages_data_df <- as.data.frame(languages_data_df)
+#glimpse(languages_data_df)
+#View(languages_data_df)
+
+ggplot(languages_data_df,
+         aes(x= reorder(languages_mx_data, -Freq), y=Freq)) +   
+          geom_bar(stat = "identity") +
+            theme_bw() + 
+              geom_bar(stat = "identity", fill="#0072B2", colour="black") +
+              geom_text(aes(label=Freq), vjust= -.2, colour="black") +
+                xlab("Languages") + ylab("Number of Observations") +
+                  ggtitle("Jobs in Mexico")  +
+                    theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+
+
+```
+
+## Place
+
+```{r}
+
+# --------- Location ------
+se_jobs_mx_place <- se_jobs_mx %>% 
+  count(Place) %>%
+  #filter(n > 2 ) %>% 
+  filter(!Place == "NA") %>% 
+  arrange(desc(n))
+
+#se_jobs_mx_place %>% View()
+
+#se_jobs_mx_place %>% glimpse() %>% View()
+
+se_jobs_mx_place %>% 
+  #count(Place, sort = TRUE) %>% 
+  slice(1:10) %>% 
+  drop_na(Place) %>% 
+  ungroup() %>%
+  mutate(Place = fct_reorder(Place, n)) %>% 
+    ggplot(aes(Place, n)) +
+      geom_col(aes(fill = n), show.legend = FALSE) +
+      coord_flip() +
+      theme_minimal() +
+      ggtitle("Ubicación de trabajos") +
+      labs(x = NULL, y = "Observaciones", caption = "@alanponce")
+
+
+```
+
+
+## Spanish Text Analysis
+
+```{r}
+
+# --------- Spanish approach ------
+### This is the same procees of tokenization, just assigting the value a "tidy_books""
+# "text" is the column name in the dataframe
+
+library(rcorpora)
+
+stopwords <- corpora("words/stopwords/es")$stopWords
+
+stopwords <- c(stopwords, as.character(seq(1:5000)))
+
+#There are also some words in English
+data(stop_words)
+
+tidy_se <- se_jobs_mx %>% 
+  unnest_tokens(word, `Technical skills`) %>% 
+  anti_join(stop_words) %>% 
+  filter(!word %in% stopwords)
+
+tidy_se %>% glimpse()
+#View(tidy_se)
+
+
+# --------- graph most used words ------
+
+tidy_se %>% 
+  count(word, sort = TRUE) %>% 
+  filter(!word == "NA") %>% 
+  top_n(10) %>% 
+  ungroup() %>%
+  mutate(word = fct_reorder(word, n)) %>% 
+    ggplot(aes(word, n)) +
+      geom_col(aes(fill = n), show.legend = FALSE) +
+      coord_flip() +
+      theme_minimal() +
+      ggtitle("Most used word by employers") +
+      labs(x = NULL, y = "Word frequency", caption = "@alanponce")
+
+
+
+# --------- Customize stop words ------
+
+tidy_se_mystopwords <- data_frame(word = c("software",  "and", "conocimiento", "conocimientos", 
+                                           "años", "experience", "manejo", "pruebas"))
+
+tidy_se <- anti_join(tidy_se,
+                            tidy_se_mystopwords, by = "word")
+
+# --------- graph most used words ------
+
+tidy_se %>% 
+  count(word, sort = TRUE) %>% 
+  filter(!word == "NA") %>%
+  top_n(10) %>% 
+  ungroup() %>%
+  mutate(word = fct_reorder(word, n)) %>% 
+    ggplot(aes(word, n)) +
+      geom_col(aes(fill = n), show.legend = FALSE) +
+      coord_flip() +
+      theme_minimal() +
+      ggtitle("Most used word by countries") +
+      labs(x = NULL, y = "Word frequency", caption = "@alanponce")
+
+
+library(ggwordcloud)
+
+# --------- word cloud ------
+# define a nice color palette
+pal <- brewer.pal(8,"Dark2")
+
+tidy_se %>% 
+  with(wordcloud(word, random.order = FALSE, max.words = 300, colors=pal))
+
+tidy_se %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  reshape2::acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("#F8766D", "#00BFC4"),
+                   max.words = 600)
+
+```
+
+
+## Jobs in USA 2020 
+
+```{r}
+
+# ---- Reading the data
+se_jobs_us <- read_sheet("https://docs.google.com/spreadsheets/d/13LvHCStdm5LnjwR6SzSAWhYMdNsU6S8ZSa4Joub6m6I/edit#gid=1016890353&fvid=1137741648", sheet = "US") 
+
+se_jobs_us %>% glimpse() %>% View()
+
+se_jobs_us <- se_jobs_us %>% 
+  drop_na(Place)
+
+se_jobs_us %>% glimpse() %>% View()
+
+```
+
+## Detecting patterns
+
+```{r}
+################################# Pattern ################################# 
+
+#languages_us <- c("BPMN", "BPM", "UML", "requirements elicitation", "BABOK", "Agile")
+
+languages_us <- "BPMN|BPM|UML|BABOK|Agile|Scrum|Kanban|Business Analys|Business analys|ITIL|TOGAF|SRS"
+
+#languages_us <- "Java|Python|C#|C[+][+]|\\bR\\b"
+
+#Scrum
+
+#languages_us
+
+############################## Cleaning the text ############################## 
+#tss_ts <- cat(tss_jobs_mx$`Technical skills`)
+se_ts_us <-replace_white(se_jobs_us$`Technical skills`)
+
+
+############################## Technical Skills ############################## 
+#languages_us_data <-  grepl(pattern=languages_us, x= oop_jobs_us$`Technical skills`, fixed=TRUE)
+#languages_us_data
+#languages_us_data <- str_extract(se_jobs_us$`Technical skills`, languages_us)
+
+
+languages_us_data <- str_extract_all(se_ts_us, languages_us)
+#languages_us_data
+
+languages_us_data <- unlist(languages_us_data)
+#languages_us_data
+
+languages_us_data_df <- table(languages_us_data)
+#languages_us_data_df
+languages_us_data_df <- as.data.frame(languages_us_data_df)
+#glimpse(languages_us_data_df)
+#View(languages_us_data_df)
+
+ggplot(languages_us_data_df,
+          aes(x= reorder(languages_us_data, -Freq), y=Freq)) +   
+            geom_bar(stat = "identity") +
+              theme_bw() + 
+              geom_bar(stat = "identity", fill="#0072B2", colour="black") +
+                geom_text(aes(label=Freq), vjust= -.2, colour="black") +
+                  xlab("Channels") + ylab("Number of Observations") +
+                    ggtitle("Jobs in USA")  +
+                      theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+
+
+```
+
+## Place
+
+```{r}
+
+# --------- Location ------
+se_jobs_us_place <- se_jobs_us %>% 
+  count(Place) %>%
+  #filter(n > 2 ) %>% 
+  filter(!Place == "NA") %>% 
+  arrange(desc(n))
+
+#se_jobs_mx_place %>% View()
+
+#se_jobs_mx_place %>% glimpse() %>% View()
+
+se_jobs_us_place %>% 
+  #count(Place, sort = TRUE) %>% 
+  slice(1:10) %>% 
+  drop_na(Place) %>% 
+  ungroup() %>%
+  mutate(Place = fct_reorder(Place, n)) %>% 
+    ggplot(aes(Place, n)) +
+      geom_col(aes(fill = n), show.legend = FALSE) +
+      coord_flip() +
+      theme_minimal() +
+      ggtitle("Ubicación de trabajos") +
+      labs(x = NULL, y = "Observaciones", caption = "@alanponce")
+
+
+```
+
+## English Text Analysis
+
+```{r}
+
+# ------------------------------------- ENGLISH -----------------------------------
+
+#Loading stop words
+data(stop_words)
+
+#### ---------------ABSTRACT 
+
+# "text" is the column name in the dataframe
+tidy_ts <- se_jobs_us %>%
+  unnest_tokens(word, `Technical skills`) %>% 
+  anti_join(stop_words)
+
+tidy_ts
+#View(tidy_ts)
+
+# A visualization of the most common words using a theme
+tidy_ts %>%
+  count(word) %>% 
+  top_n(10, n) %>% 
+  mutate(word = fct_reorder(word, n)) %>% 
+  ggplot(aes(word, n)) +
+    geom_col(aes(fill = n), show.legend = FALSE) +
+    coord_flip() +
+    theme_minimal() +
+    ggtitle("Most-used words in Abstract") +
+    labs(x = NULL, y = "Word frequency", caption = "Post by @alanponce")
+
+
+library(ggwordcloud)
+
+# --------- word cloud ------
+# define a nice color palette
+pal <- brewer.pal(8,"Dark2")
+
+tidy_ts %>% 
+  with(wordcloud(word, random.order = FALSE, max.words = 300, colors=pal))
+
+tidy_ts %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  reshape2::acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("#F8766D", "#00BFC4"),
+                   max.words = 600)
+
+```
+
+## Students contribution
+
+```{r}
+
+# ------------- MX
+
+# --- Student dataframe
+se_students_mx <- se_jobs_mx %>% 
+  select(`Student ID`) %>% 
+  group_by(`Student ID`) %>% 
+  count() %>% 
+  arrange(desc(n)) %>% 
+  na.omit() %>% 
+  glimpse()
+
+# --- Student graph
+ggplot(se_students_mx,
+          aes(x= reorder(`Student ID`, -n), y=n)) +   
+          geom_bar(stat = "identity") +
+          theme_bw() + 
+            geom_bar(stat = "identity", fill="#0072B2", colour="black") +
+            geom_text(aes(label=n), vjust= -.2, colour="black") +
+            xlab("Channels") + ylab("Number of Observations") +
+            ggtitle("Student contribution searching in Mexico")  +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# ------------- US
+
+# --- Student dataframe
+se_students_us <- se_jobs_us %>% 
+  select(`Student ID`) %>% 
+  group_by(`Student ID`) %>% 
+  count() %>% 
+  arrange(desc(n)) %>% 
+  na.omit() %>% 
+  glimpse()
+
+# --- Student graph
+ggplot(se_students_us,
+          aes(x= reorder(`Student ID`, -n), y=n)) +   
+          geom_bar(stat = "identity") +
+          theme_bw() + 
+            geom_bar(stat = "identity", fill="#0072B2", colour="black") +
+            geom_text(aes(label=n), vjust= -.2, colour="black") +
+            xlab("Channels") + ylab("Number of Observations") +
+            ggtitle("Student contribution searching in USA")  +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# --- Binding dataframes
+mx_us_all <- rbind(se_jobs_mx, se_jobs_us) %>% glimpse()
+
+#mx_us_all <- rbind(students_mx, students_us) %>% glimpse()
+
+# --- Student dataframe
+se_student_contribution <- mx_us_all %>%
+  select(`Student ID`) %>% 
+  group_by(`Student ID`) %>% 
+  count() %>% 
+  arrange(desc(n)) %>% 
+  na.omit() %>% 
+  glimpse()
+  
+
+# --- Student graph
+ggplot(se_student_contribution,
+            aes(x= reorder(`Student ID`, -n), y=n)) +   
+            geom_bar(stat = "identity") +
+            theme_bw() + 
+            geom_bar(stat = "identity", fill="#0072B2", colour="black") +
+            geom_text(aes(label=n), vjust= -.2, colour="black") +
+            xlab("Participation") + ylab("Number of Observations") +
+            ggtitle("Student contribution searching in MX and USA")  +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Jobs in Mexico: DEPRECTED
+
+```{r}
+
+###############################
+
+# -- Pattern
+languages_mx <- "JavaScript|Python|C#|C[+][+]|\\bR\\b|PHP|Java|HTML|CSS|Angular|React|SQL|MongoDB|Hadoop|Azure|Scrum|Agile|UML"
+#languages_mx
+
+skills_ds_mx <- se_jobs_mx %>%
+  mutate(Description = str_trim(`Technical skills` , side = "both")) %>%
+  mutate(skills_mx = str_extract_all(`Technical skills` , regex(languages_mx, ignore_case=TRUE))) %>%
+  unnest_longer(skills_mx)
+
+#skills_ds_mx %>% glimpse()
+
+#languages_mx <- c("Java", "Python", "JavaScript|Javascript", "HTML", "CSS", "Angular", "React", "Scrum", "Agile", "UML")
+#class(languages_mx)
+
+# skills_ds_mx <- se_jobs_mx %>% 
+#   mutate(Description = str_trim(`Technical skills` , side = "both")) %>% 
+#   #mutate(skills_mx = str_extract_all(`Technical skills` , regex(languages_mx, ignore_case=TRUE))) %>% 
+#   mutate(skills_mx = str_extract_all(`Technical skills` , fixed(languages_mx, ignore_case=TRUE)))%>% 
+#  unnest_longer(skills_mx) 
+
+# skills_ds_mx %>% glimpse()
+
+
+skills_ds_mx %>% 
+  count(skills_mx, sort = TRUE) %>% 
+  filter(!is.na(skills_mx)) %>% 
+  slice(1:25) %>% 
+  #top_n(15) %>% 
+  ungroup() %>%
+  mutate(skills_mx = fct_reorder(skills_mx, n)) %>% 
+    ggplot(aes(skills_mx, n)) +
+      geom_col(aes(fill = n), show.legend = FALSE) +
+      coord_flip() +
+      theme_minimal() +
+      ggtitle("Requerimientos tecnicos en trabajos en  México")  +
+      labs(x = NULL, y = "Frecuencia de palabras", caption = "@alanponce")
+
+
+```
+
+
+
+```{r}
+
+#To clean up the memory of current R session
+rm(list = ls(all=TRUE))
+
+# which google sheets do you have access to?
+# may ask you to authenticate in a browser!
+gs_ls()
+
+#data_googlesheets <- gs_ls()
+#data_googlesheets
+#View(data_googlesheets)
+
+se_jobs <- gs_title("SE Jobs")
+#se_jobs
+#View(tss_jobs)
+
+
+#We can "download" one of the sheets using gs_read()
+se_jobs_mx <- gs_read(ss=se_jobs, 
+                            ws = "Mexico", 
+                            skip=0)
+
+se_jobs_mx %>% glimpse() %>% View()
+
+
+###1648 observations
+#1659 observations
+
+
+#glimpse(se_jobs_mx)
+#View(se_jobs_mx)
+
+```
+
+
+
+## Jobs in USA: DEPRECTED
+
+```{r}
+
+#To clean up the memory of current R session
+#rm(list = ls(all=TRUE))
+
+# which google sheets do you have access to?
+# may ask you to authenticate in a browser!
+#gs_ls()
+
+#data_googlesheets <- gs_ls()
+#data_googlesheets
+#View(data_googlesheets)
+
+#oop_jobs <- gs_title("object oriented programming (OOP)  Jobs")
+#oop_jobs
+#View(ai_hall_fame)
+
+
+#We can "download" one of the sheets using gs_read()
+se_jobs_us <- gs_read(ss=se_jobs, 
+                            ws = "US", 
+                            skip=0)
+
+se_jobs_us %>% glimpse()
+#935 Observations
+
+
+View(se_jobs_us)
+
+
+```
+
+
